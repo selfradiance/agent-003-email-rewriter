@@ -3,7 +3,8 @@
   "version": "0.0.1",
   "description": "A bonded email rewriter agent — rewrites emails via Claude API, human approves or rejects, bond released or slashed through AgentGate",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "tsx src/cli.ts",
+    "test": "vitest run"
   },
   "keywords": [],
   "author": "",
