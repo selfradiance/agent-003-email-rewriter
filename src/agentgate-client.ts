@@ -59,9 +59,15 @@ export interface AgentKeys {
 
 const IDENTITY_FILE = path.resolve("agent-identity.json");
 
+interface SavedIdentity {
+  publicKey: string;
+  privateKey: string;
+  identityId?: string;
+}
+
 export function loadOrCreateKeypair(): AgentKeys {
   if (fs.existsSync(IDENTITY_FILE)) {
-    const data = JSON.parse(fs.readFileSync(IDENTITY_FILE, "utf8"));
+    const data: SavedIdentity = JSON.parse(fs.readFileSync(IDENTITY_FILE, "utf8"));
     if (data.publicKey && data.privateKey) {
       return { publicKey: data.publicKey, privateKey: data.privateKey };
     }
@@ -82,6 +88,18 @@ export function loadOrCreateKeypair(): AgentKeys {
 
   fs.writeFileSync(IDENTITY_FILE, JSON.stringify(keys, null, 2), "utf8");
   return keys;
+}
+
+export function getSavedIdentityId(): string | undefined {
+  if (!fs.existsSync(IDENTITY_FILE)) return undefined;
+  const data: SavedIdentity = JSON.parse(fs.readFileSync(IDENTITY_FILE, "utf8"));
+  return data.identityId;
+}
+
+function saveIdentityId(identityId: string): void {
+  const data: SavedIdentity = JSON.parse(fs.readFileSync(IDENTITY_FILE, "utf8"));
+  data.identityId = identityId;
+  fs.writeFileSync(IDENTITY_FILE, JSON.stringify(data, null, 2), "utf8");
 }
 
 // ---------------------------------------------------------------------------
@@ -158,18 +176,36 @@ async function signedPost(
 // ---------------------------------------------------------------------------
 
 export async function createIdentity(keys: AgentKeys): Promise<string> {
-  const data = await signedPost(
-    "/v1/identities",
-    { publicKey: keys.publicKey },
-    keys,
-  );
-
-  const identityId = data.identityId;
-  if (typeof identityId !== "string") {
-    throw new Error(`No identityId returned: ${JSON.stringify(data)}`);
+  // If we already have a saved identity ID from a previous run, use it
+  const savedId = getSavedIdentityId();
+  if (savedId) {
+    return savedId;
   }
 
-  return identityId;
+  try {
+    const data = await signedPost(
+      "/v1/identities",
+      { publicKey: keys.publicKey },
+      keys,
+    );
+
+    const identityId = data.identityId;
+    if (typeof identityId !== "string") {
+      throw new Error(`No identityId returned: ${JSON.stringify(data)}`);
+    }
+
+    // Save the identity ID for subsequent runs
+    saveIdentityId(identityId);
+    return identityId;
+  } catch (err) {
+    // 409 means this keypair is already registered — that's fine
+    if (err instanceof Error && err.message.includes("(409)")) {
+      throw new Error(
+        "Identity already registered but ID not saved locally. Delete agent-identity.json and try again.",
+      );
+    }
+    throw err;
+  }
 }
 
 export async function postBond(
