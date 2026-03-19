@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { rewriteEmail } from "../src/rewriter";
 
