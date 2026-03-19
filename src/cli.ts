@@ -26,6 +26,10 @@ async function main() {
     console.error(`Error: File not found: ${absolutePath}`);
     process.exit(1);
   }
+  if (!fs.statSync(absolutePath).isFile()) {
+    console.error(`Error: "${absolutePath}" is a directory, not a file`);
+    process.exit(1);
+  }
 
   const MAX_EMAIL_BYTES = 10_240; // 10KB — an email larger than this is almost certainly not a single email
   const fileSizeBytes = fs.statSync(absolutePath).size;
