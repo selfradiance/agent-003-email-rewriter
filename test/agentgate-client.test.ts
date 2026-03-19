@@ -15,14 +15,24 @@ import {
 // ---------------------------------------------------------------------------
 
 describe("agentgate-client — unit tests", () => {
-  it("throws if AGENTGATE_REST_KEY is not set", async () => {
-    const saved = process.env.AGENTGATE_REST_KEY;
+  it("throws if AGENTGATE_REST_KEY is not set and no saved identity", async () => {
+    const savedKey = process.env.AGENTGATE_REST_KEY;
     delete process.env.AGENTGATE_REST_KEY;
 
-    const keys = loadOrCreateKeypair();
-    await expect(createIdentity(keys)).rejects.toThrow("AGENTGATE_REST_KEY not set");
+    // Remove saved identity so createIdentity must call the API
+    const identityFile = "agent-identity.json";
+    const savedFile = fs.existsSync(identityFile) ? fs.readFileSync(identityFile, "utf8") : null;
+    if (fs.existsSync(identityFile)) fs.unlinkSync(identityFile);
 
-    if (saved) process.env.AGENTGATE_REST_KEY = saved;
+    try {
+      const keys = loadOrCreateKeypair();
+      await expect(createIdentity(keys)).rejects.toThrow("AGENTGATE_REST_KEY not set");
+    } finally {
+      // Restore
+      if (savedKey) process.env.AGENTGATE_REST_KEY = savedKey;
+      if (savedFile) fs.writeFileSync(identityFile, savedFile, "utf8");
+      else if (fs.existsSync(identityFile)) fs.unlinkSync(identityFile);
+    }
   });
 
   it("generates a valid keypair", () => {
