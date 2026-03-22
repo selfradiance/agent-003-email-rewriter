@@ -57,7 +57,9 @@ export interface AgentKeys {
   privateKey: string;
 }
 
-const IDENTITY_FILE = path.resolve("agent-identity.json");
+function getIdentityFilePath(): string {
+  return path.resolve(process.env.AGENT_IDENTITY_FILE ?? "agent-identity.json");
+}
 
 interface SavedIdentity {
   publicKey: string;
@@ -66,8 +68,8 @@ interface SavedIdentity {
 }
 
 export function loadOrCreateKeypair(): AgentKeys {
-  if (fs.existsSync(IDENTITY_FILE)) {
-    const data: SavedIdentity = JSON.parse(fs.readFileSync(IDENTITY_FILE, "utf8"));
+  if (fs.existsSync(getIdentityFilePath())) {
+    const data: SavedIdentity = JSON.parse(fs.readFileSync(getIdentityFilePath(), "utf8"));
     if (data.publicKey && data.privateKey) {
       return { publicKey: data.publicKey, privateKey: data.privateKey };
     }
@@ -86,20 +88,20 @@ export function loadOrCreateKeypair(): AgentKeys {
     privateKey: base64UrlToBase64(privateJwk.d),
   };
 
-  fs.writeFileSync(IDENTITY_FILE, JSON.stringify(keys, null, 2), "utf8");
+  fs.writeFileSync(getIdentityFilePath(), JSON.stringify(keys, null, 2), { encoding: "utf8", mode: 0o600 });
   return keys;
 }
 
 export function getSavedIdentityId(): string | undefined {
-  if (!fs.existsSync(IDENTITY_FILE)) return undefined;
-  const data: SavedIdentity = JSON.parse(fs.readFileSync(IDENTITY_FILE, "utf8"));
+  if (!fs.existsSync(getIdentityFilePath())) return undefined;
+  const data: SavedIdentity = JSON.parse(fs.readFileSync(getIdentityFilePath(), "utf8"));
   return data.identityId;
 }
 
 function saveIdentityId(identityId: string): void {
-  const data: SavedIdentity = JSON.parse(fs.readFileSync(IDENTITY_FILE, "utf8"));
+  const data: SavedIdentity = JSON.parse(fs.readFileSync(getIdentityFilePath(), "utf8"));
   data.identityId = identityId;
-  fs.writeFileSync(IDENTITY_FILE, JSON.stringify(data, null, 2), "utf8");
+  fs.writeFileSync(getIdentityFilePath(), JSON.stringify(data, null, 2), { encoding: "utf8", mode: 0o600 });
 }
 
 // ---------------------------------------------------------------------------

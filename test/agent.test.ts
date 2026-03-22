@@ -1,6 +1,8 @@
 import "dotenv/config";
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { rewriteEmail } from "../src/rewriter";
 import {
   loadOrCreateKeypair,
@@ -9,6 +11,33 @@ import {
   executeBondedAction,
   resolveAction,
 } from "../src/agentgate-client";
+
+// ---------------------------------------------------------------------------
+// Use a temporary identity file so tests never touch the real one
+// ---------------------------------------------------------------------------
+
+const TEST_IDENTITY_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "agent003-agent-test-"));
+const TEST_IDENTITY_FILE = path.join(TEST_IDENTITY_DIR, "agent-identity-test.json");
+
+let savedIdentityFile: string | undefined;
+
+beforeAll(() => {
+  savedIdentityFile = process.env.AGENT_IDENTITY_FILE;
+  process.env.AGENT_IDENTITY_FILE = TEST_IDENTITY_FILE;
+});
+
+afterAll(() => {
+  // Restore original env
+  if (savedIdentityFile !== undefined) {
+    process.env.AGENT_IDENTITY_FILE = savedIdentityFile;
+  } else {
+    delete process.env.AGENT_IDENTITY_FILE;
+  }
+
+  // Clean up temp directory
+  if (fs.existsSync(TEST_IDENTITY_FILE)) fs.unlinkSync(TEST_IDENTITY_FILE);
+  if (fs.existsSync(TEST_IDENTITY_DIR)) fs.rmdirSync(TEST_IDENTITY_DIR);
+});
 
 const HAS_BOTH = !!process.env.ANTHROPIC_API_KEY &&
   !!process.env.AGENTGATE_REST_KEY &&
@@ -19,7 +48,7 @@ const INSTRUCTION = "make this more professional";
 
 describe.skipIf(!HAS_BOTH)("full lifecycle — approve path", () => {
   afterAll(() => {
-    if (fs.existsSync("agent-identity.json")) fs.unlinkSync("agent-identity.json");
+    if (fs.existsSync(TEST_IDENTITY_FILE)) fs.unlinkSync(TEST_IDENTITY_FILE);
   });
 
   it("rewrite → bond → execute → resolve as success", async () => {
@@ -54,7 +83,7 @@ describe.skipIf(!HAS_BOTH)("full lifecycle — approve path", () => {
 
 describe.skipIf(!HAS_BOTH)("full lifecycle — reject path", () => {
   afterAll(() => {
-    if (fs.existsSync("agent-identity.json")) fs.unlinkSync("agent-identity.json");
+    if (fs.existsSync(TEST_IDENTITY_FILE)) fs.unlinkSync(TEST_IDENTITY_FILE);
   });
 
   it("rewrite → bond → execute → resolve as failed", async () => {

@@ -6,6 +6,42 @@ import path from "node:path";
 import { rewriteEmail } from "./rewriter";
 import { loadOrCreateKeypair, createIdentity, postBond, executeBondedAction, resolveAction } from "./agentgate-client";
 import { askHumanVerdict } from "./prompt";
+import { stripEscapes } from "./sanitize";
+
+// ---------------------------------------------------------------------------
+// Shared state for SIGINT cleanup
+// ---------------------------------------------------------------------------
+
+let pendingActionId: string | undefined;
+let pendingKeys: ReturnType<typeof loadOrCreateKeypair> | undefined;
+let cleanupInProgress = false;
+
+async function resolveAndExit(reason: string): Promise<void> {
+  if (cleanupInProgress) return;
+  cleanupInProgress = true;
+
+  if (pendingActionId && pendingKeys) {
+    console.log(`\n${reason} — resolving open action as failed...`);
+    try {
+      await resolveAction(pendingKeys, pendingActionId, "failed");
+      console.log(`Action ${pendingActionId} resolved as failed.`);
+    } catch (err) {
+      console.error(`Warning: failed to resolve action: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  } else if (reason) {
+    console.log(`\n${reason}`);
+  }
+
+  process.exit(1);
+}
+
+process.on("SIGINT", () => {
+  void resolveAndExit("Interrupted (Ctrl+C)");
+});
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
 
 async function main() {
   // Parse arguments
@@ -44,17 +80,17 @@ async function main() {
     process.exit(1);
   }
 
-  // Startup banner
+  // Startup banner — sanitize user-provided text before printing
+  const safeInstruction = stripEscapes(instruction);
   const agentGateUrl = process.env.AGENTGATE_URL ?? "http://127.0.0.1:3000";
   console.log("");
   console.log("  Agent 003 — Email Rewriter");
   console.log(`  File:         ${absolutePath}`);
-  console.log(`  Instruction:  ${instruction}`);
+  console.log(`  Instruction:  ${safeInstruction}`);
   console.log(`  AgentGate:    ${agentGateUrl}`);
   console.log("");
 
   let rewrittenEmail: string | undefined;
-  let actionId: string | undefined;
 
   try {
     // Step 1: Rewrite the email via Claude
@@ -78,11 +114,27 @@ async function main() {
       originalLength: originalEmail.length,
       rewrittenLength: rewrittenEmail.length,
     }, exposureCents);
-    actionId = action.actionId as string;
+    const actionId = action.actionId as string;
     console.log(`Action started: ${actionId}\n`);
+
+    // Make action visible to SIGINT handler during the prompt phase
+    pendingActionId = actionId;
+    pendingKeys = keys;
 
     // Step 3: Ask the human
     const verdict = await askHumanVerdict(originalEmail, rewrittenEmail);
+
+    // Action no longer needs SIGINT cleanup — we're handling it now
+    pendingActionId = undefined;
+    pendingKeys = undefined;
+
+    // Handle abort (EOF on stdin or similar)
+    if (verdict === "abort") {
+      console.log("\nInput closed — resolving action as failed...");
+      await resolveAction(keys, actionId, "failed");
+      console.log(`Action ${actionId} resolved as failed.`);
+      process.exit(1);
+    }
 
     // Step 4: Resolve through AgentGate
     const outcome = verdict === "approve" ? "success" : "failed";
@@ -102,7 +154,7 @@ async function main() {
     // If rewrite succeeded but AgentGate/prompt failed, still show the rewrite
     if (rewrittenEmail) {
       console.log("\n── Rewrite was completed before the error ──");
-      console.log(rewrittenEmail);
+      console.log(stripEscapes(rewrittenEmail));
       console.log("──────────────────────────────────────────\n");
     }
 

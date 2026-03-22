@@ -1,6 +1,8 @@
 import "dotenv/config";
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
   loadOrCreateKeypair,
   createIdentity,
@@ -9,6 +11,33 @@ import {
   resolveAction,
   type AgentKeys,
 } from "../src/agentgate-client";
+
+// ---------------------------------------------------------------------------
+// Use a temporary identity file so tests never touch the real one
+// ---------------------------------------------------------------------------
+
+const TEST_IDENTITY_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "agent003-test-"));
+const TEST_IDENTITY_FILE = path.join(TEST_IDENTITY_DIR, "agent-identity-test.json");
+
+let savedIdentityFile: string | undefined;
+
+beforeAll(() => {
+  savedIdentityFile = process.env.AGENT_IDENTITY_FILE;
+  process.env.AGENT_IDENTITY_FILE = TEST_IDENTITY_FILE;
+});
+
+afterAll(() => {
+  // Restore original env
+  if (savedIdentityFile !== undefined) {
+    process.env.AGENT_IDENTITY_FILE = savedIdentityFile;
+  } else {
+    delete process.env.AGENT_IDENTITY_FILE;
+  }
+
+  // Clean up temp directory
+  if (fs.existsSync(TEST_IDENTITY_FILE)) fs.unlinkSync(TEST_IDENTITY_FILE);
+  if (fs.existsSync(TEST_IDENTITY_DIR)) fs.rmdirSync(TEST_IDENTITY_DIR);
+});
 
 // ---------------------------------------------------------------------------
 // Unit tests — always run
@@ -20,9 +49,8 @@ describe("agentgate-client — unit tests", () => {
     delete process.env.AGENTGATE_REST_KEY;
 
     // Remove saved identity so createIdentity must call the API
-    const identityFile = "agent-identity.json";
-    const savedFile = fs.existsSync(identityFile) ? fs.readFileSync(identityFile, "utf8") : null;
-    if (fs.existsSync(identityFile)) fs.unlinkSync(identityFile);
+    const savedFile = fs.existsSync(TEST_IDENTITY_FILE) ? fs.readFileSync(TEST_IDENTITY_FILE, "utf8") : null;
+    if (fs.existsSync(TEST_IDENTITY_FILE)) fs.unlinkSync(TEST_IDENTITY_FILE);
 
     try {
       const keys = loadOrCreateKeypair();
@@ -30,8 +58,8 @@ describe("agentgate-client — unit tests", () => {
     } finally {
       // Restore
       if (savedKey) process.env.AGENTGATE_REST_KEY = savedKey;
-      if (savedFile) fs.writeFileSync(identityFile, savedFile, "utf8");
-      else if (fs.existsSync(identityFile)) fs.unlinkSync(identityFile);
+      if (savedFile) fs.writeFileSync(TEST_IDENTITY_FILE, savedFile, "utf8");
+      else if (fs.existsSync(TEST_IDENTITY_FILE)) fs.unlinkSync(TEST_IDENTITY_FILE);
     }
   });
 
@@ -48,19 +76,18 @@ describe("agentgate-client — unit tests", () => {
   });
 
   it("persists keypair to file and reloads it", () => {
-    // Remove any existing identity file
-    const identityPath = "agent-identity.json";
-    if (fs.existsSync(identityPath)) fs.unlinkSync(identityPath);
+    // Remove any existing test identity file
+    if (fs.existsSync(TEST_IDENTITY_FILE)) fs.unlinkSync(TEST_IDENTITY_FILE);
 
     const keys1 = loadOrCreateKeypair();
-    expect(fs.existsSync(identityPath)).toBe(true);
+    expect(fs.existsSync(TEST_IDENTITY_FILE)).toBe(true);
 
     const keys2 = loadOrCreateKeypair();
     expect(keys2.publicKey).toBe(keys1.publicKey);
     expect(keys2.privateKey).toBe(keys1.privateKey);
 
     // Clean up
-    fs.unlinkSync(identityPath);
+    fs.unlinkSync(TEST_IDENTITY_FILE);
   });
 });
 
@@ -106,7 +133,7 @@ describe.skipIf(!HAS_AGENTGATE)("agentgate-client — integration tests (live Ag
   });
 
   afterEach(() => {
-    // Clean up identity file
-    if (fs.existsSync("agent-identity.json")) fs.unlinkSync("agent-identity.json");
+    // Clean up test identity file between integration tests
+    if (fs.existsSync(TEST_IDENTITY_FILE)) fs.unlinkSync(TEST_IDENTITY_FILE);
   });
 });
